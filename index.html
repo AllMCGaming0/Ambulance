@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Robo Rangers — Smart Ambulance AI</title>
+  <meta name="description" content="AI-powered Smart Ambulance & Intelligent Emergency Response System with voice control, real-time GPS, hospital routing, SMS, and Bluetooth traffic control." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ══ SETTINGS PANEL ══════════════════════════════════════════════════ -->
+<div id="settings-overlay" class="settings-overlay hidden"></div>
+<aside id="settings-panel" class="settings-panel hidden">
+  <div class="settings-header">
+    <div class="settings-title">
+      <div class="settings-icon-wrap">⚙️</div>
+      <div>
+        <div class="settings-title-main">Configuration</div>
+        <div class="settings-title-sub">Smart Ambulance AI</div>
+      </div>
+    </div>
+    <button id="close-settings" class="close-btn" aria-label="Close settings">✕</button>
+  </div>
+  <div class="settings-body">
+    <div class="settings-section">
+      <div class="settings-section-label">🤖 Gemini AI Brain</div>
+      <label class="field-label" for="gemini-key">API Key</label>
+      <input type="password" id="gemini-key" placeholder="AIza..." class="settings-input" />
+      <div class="field-hint">Get a free key at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a></div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">🏥 Hospital Search <span class="optional-tag">Optional</span></div>
+      <label class="field-label" for="places-key">Google Places API Key</label>
+      <input type="password" id="places-key" placeholder="AIza..." class="settings-input" />
+      <div class="field-hint">Only needed for Google Places fallback. OpenStreetMap is used by default.</div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">🚦 Traffic Junction</div>
+      <div class="settings-row">
+        <div class="settings-col">
+          <label class="field-label" for="junction-lat">Latitude</label>
+          <input type="number" id="junction-lat" placeholder="26.7606" step="0.0001" class="settings-input" />
+        </div>
+        <div class="settings-col">
+          <label class="field-label" for="junction-lng">Longitude</label>
+          <input type="number" id="junction-lng" placeholder="80.9506" step="0.0001" class="settings-input" />
+        </div>
+      </div>
+      <label class="field-label" for="junction-radius">Trigger Radius (meters)</label>
+      <input type="number" id="junction-radius" value="300" class="settings-input" />
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">🏥 Manual Hospital Override</div>
+      <label class="field-label" for="hospital-name">Hospital Name</label>
+      <input type="text" id="hospital-name" placeholder="Auto-detected or enter manually" class="settings-input" />
+      <label class="field-label" for="hospital-phone">Phone Number</label>
+      <input type="tel" id="hospital-phone" placeholder="+91..." class="settings-input" />
+    </div>
+    <button id="save-settings" class="btn-save">💾 Save Configuration</button>
+  </div>
+</aside>
+
+<!-- ══ MAIN APP ════════════════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- TOP HEADER -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="brand-logo">
+        <span class="brand-logo-icon">🚑</span>
+        <div class="brand-logo-pulse"></div>
+      </div>
+      <div class="brand-text">
+        <span class="brand-name">Robo Rangers</span>
+        <span class="brand-sub">Smart Ambulance · AI Dispatch</span>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <div id="emg-badge" class="emg-badge hidden">
+        <span class="emg-dot"></span>
+        <span>⚠ EMERGENCY ACTIVE</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <div class="status-pills">
+        <div id="gps-indicator" class="status-pill" title="GPS Status">
+          <span class="pill-dot" id="gps-dot"></span>
+          <span id="gps-label">GPS</span>
+        </div>
+        <div id="bt-indicator" class="status-pill" title="Bluetooth Status">
+          <span class="pill-dot" id="bt-dot"></span>
+          <span id="bt-label">BT</span>
+        </div>
+      </div>
+      <button id="open-settings" class="gear-btn" aria-label="Open settings">
+        <span>⚙</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- TAB BAR -->
+  <nav class="tab-nav" role="tablist">
+    <button class="tab active" id="tab-ambulance" role="tab" aria-selected="true" data-tab="ambulance">
+      <span class="tab-icon">🚑</span><span class="tab-label">Ambulance</span>
+    </button>
+    <button class="tab" id="tab-hospital" role="tab" aria-selected="false" data-tab="hospital">
+      <span class="tab-icon">🏥</span><span class="tab-label">Hospital</span>
+    </button>
+    <button class="tab" id="tab-nearby" role="tab" aria-selected="false" data-tab="nearby">
+      <span class="tab-icon">📡</span><span class="tab-label">Nearby</span>
+    </button>
+    <div class="tab-indicator" id="tab-indicator"></div>
+  </nav>
+
+  <!-- ── TAB: AMBULANCE ──────────────────────────────────────────────── -->
+  <section id="tab-content-ambulance" class="tab-content active" role="tabpanel">
+    <div class="dashboard-grid">
+
+      <!-- LEFT COLUMN -->
+      <div class="col-left">
+
+        <!-- VOICE ORB CARD -->
+        <div class="voice-card" id="voice-card">
+          <div class="voice-card-bg"></div>
+          <div class="voice-orb-wrapper">
+            <div id="voice-orb" class="voice-orb idle" aria-label="Voice control button" role="button" tabindex="0">
+              <div class="orb-ring r1"></div>
+              <div class="orb-ring r2"></div>
+              <div class="orb-ring r3"></div>
+              <div class="orb-core">
+                <div class="orb-icon" id="orb-icon">🎙️</div>
+              </div>
+            </div>
+          </div>
+          <div class="voice-meta">
+            <div class="voice-status" id="voice-status">Tap orb or press Space to activate</div>
+            <div class="voice-transcript" id="voice-transcript"></div>
+          </div>
+          <div class="voice-controls">
+            <button id="voice-toggle-btn" class="btn-voice">
+              <span class="btn-voice-icon">🎙️</span>
+              <span>Start Listening</span>
+            </button>
+            <button id="demo-mode-btn" class="btn-demo">🎭 Demo</button>
+          </div>
+        </div>
+
+        <!-- AI RESPONSE PANEL -->
+        <div class="ai-panel" id="ai-panel">
+          <div class="ai-panel-header">
+            <div class="ai-avatar-wrap">
+              <div class="ai-avatar">🤖</div>
+              <div class="ai-avatar-ring"></div>
+            </div>
+            <div class="ai-header-text">
+              <div class="ai-title">Gemini AI Dispatcher</div>
+              <div class="ai-subtitle">Emergency Response System</div>
+            </div>
+            <div class="ai-streaming-indicator hidden" id="ai-streaming">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+          <div class="ai-response" id="ai-response">
+            <span class="ai-placeholder">I'm ready. Describe any emergency and I'll orchestrate the full response automatically.</span>
+          </div>
+          <div class="ai-action-chips" id="ai-action-chips"></div>
+        </div>
+
+        <!-- STATUS GRID -->
+        <div class="status-grid">
+          <div class="status-card" id="card-gps">
+            <div class="status-card-icon">📍</div>
+            <div class="status-card-body">
+              <div class="status-card-label">GPS Location</div>
+              <div class="status-card-value" id="gps-coords">Acquiring…</div>
+            </div>
+            <div class="status-card-glow"></div>
+          </div>
+          <div class="status-card" id="card-bt">
+            <div class="status-card-icon">📡</div>
+            <div class="status-card-body">
+              <div class="status-card-label">Bluetooth</div>
+              <div class="status-card-value" id="bt-status">Not Connected</div>
+            </div>
+            <div class="status-card-glow"></div>
+          </div>
+          <div class="status-card" id="card-junction">
+            <div class="status-card-icon">🚦</div>
+            <div class="status-card-body">
+              <div class="status-card-label">Junction Distance</div>
+              <div class="status-card-value" id="junction-dist">—</div>
+            </div>
+            <div class="status-card-glow"></div>
+          </div>
+          <div class="status-card" id="card-eta">
+            <div class="status-card-icon">⏱</div>
+            <div class="status-card-body">
+              <div class="status-card-label">ETA to Hospital</div>
+              <div class="status-card-value" id="eta-value">—</div>
+            </div>
+            <div class="status-card-glow"></div>
+          </div>
+        </div>
+
+      </div><!-- /col-left -->
+
+      <!-- RIGHT COLUMN -->
+      <div class="col-right">
+
+        <!-- LIVE MAP -->
+        <div class="map-card" id="leaflet-map-card">
+          <div class="map-header">
+            <div class="map-header-left">
+              <div class="map-live-badge">
+                <span class="live-dot" id="location-pulse-dot"></span>
+                <span>LIVE</span>
+              </div>
+              <span class="map-title">Route Map</span>
+            </div>
+            <span class="map-status" id="map-status-badge">Awaiting emergency…</span>
+          </div>
+          <div id="leaflet-map"></div>
+          <div class="map-footer">
+            <span class="map-coords">
+              <span id="coord-lat">—</span>, <span id="coord-lng">—</span>
+            </span>
+            <a id="ambulance-maps-link" href="#" target="_blank" rel="noopener" class="map-open-link">📍 Open in Maps ↗</a>
+          </div>
+        </div>
+
+        <!-- HOSPITAL LIST -->
+        <div id="hospital-list" class="hospital-list"></div>
+
+        <!-- HOSPITAL DETAIL CARD -->
+        <div class="hospital-card hidden" id="hospital-card">
+          <div class="hospital-card-top">
+            <div class="hospital-card-title-row">
+              <div class="hospital-icon-wrap">🏥</div>
+              <div class="hospital-info">
+                <div class="hospital-name" id="hospital-name-display">—</div>
+                <div class="hospital-address" id="hospital-address">—</div>
+              </div>
+              <div class="hospital-quick-actions">
+                <button id="call-hospital-btn" class="hq-btn hq-call" title="Call Hospital">📞</button>
+                <button id="sms-hospital-btn" class="hq-btn hq-sms" title="Send SMS">💬</button>
+                <button id="announce-btn" class="hq-btn hq-announce" title="Voice Announce">🔊</button>
+              </div>
+            </div>
+            <div class="hospital-badges" id="hospital-badges"></div>
+          </div>
+
+          <div class="hospital-stats-row">
+            <div class="hstat-cell">
+              <div class="hstat-label">Distance</div>
+              <div class="hstat-val" id="hosp-distance">—</div>
+            </div>
+            <div class="hstat-divider"></div>
+            <div class="hstat-cell">
+              <div class="hstat-label">Drive ETA</div>
+              <div class="hstat-val" id="hosp-eta">—</div>
+            </div>
+            <div class="hstat-divider"></div>
+            <div class="hstat-cell">
+              <div class="hstat-label">Phone</div>
+              <div class="hstat-val" id="hosp-phone">—</div>
+            </div>
+          </div>
+
+          <div class="hospital-details-grid" id="hospital-details-grid">
+            <div class="hdetail-row hidden" id="row-operator">
+              <span class="hdetail-icon">🏢</span>
+              <span class="hdetail-label">Operator</span>
+              <span class="hdetail-value" id="hosp-operator">—</span>
+            </div>
+            <div class="hdetail-row hidden" id="row-beds">
+              <span class="hdetail-icon">🛏️</span>
+              <span class="hdetail-label">Beds</span>
+              <span class="hdetail-value" id="hosp-beds">—</span>
+            </div>
+            <div class="hdetail-row hidden" id="row-speciality">
+              <span class="hdetail-icon">⚕️</span>
+              <span class="hdetail-label">Speciality</span>
+              <span class="hdetail-value" id="hosp-speciality">—</span>
+            </div>
+            <div class="hdetail-row hidden" id="row-hours">
+              <span class="hdetail-icon">🕐</span>
+              <span class="hdetail-label">Hours</span>
+              <span class="hdetail-value" id="hosp-hours">—</span>
+            </div>
+            <div class="hdetail-row hidden" id="row-website">
+              <span class="hdetail-icon">🌐</span>
+              <span class="hdetail-label">Website</span>
+              <a class="hdetail-value hdetail-link" id="hosp-website" href="#" target="_blank">—</a>
+            </div>
+          </div>
+
+          <div class="hospital-map-links">
+            <a id="directions-maps-link" href="#" target="_blank" rel="noopener" class="mlink mlink-dir hidden">
+              <span>🚗</span><span>Open Route in Google Maps</span><span>↗</span>
+            </a>
+            <a id="hospital-location-link" href="#" target="_blank" rel="noopener" class="mlink mlink-loc">
+              <span>📍</span><span>View Hospital on Maps</span><span>↗</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- TRAFFIC CONTROL -->
+        <div class="traffic-card">
+          <div class="traffic-card-header">
+            <span class="traffic-card-title">🚦 Traffic Signal Control</span>
+            <span class="traffic-card-sub">Bluetooth · ESP32</span>
+          </div>
+          <div class="traffic-body">
+            <div class="traffic-lights-wrap">
+              <div class="signal-col">
+                <div class="signal-tag">Signal 1</div>
+                <div class="traffic-light-widget" id="tl1">
+                  <div class="tl-light red" id="tl1-red"></div>
+                  <div class="tl-light yellow" id="tl1-yellow"></div>
+                  <div class="tl-light green" id="tl1-green"></div>
+                </div>
+              </div>
+              <div class="traffic-emg-controls">
+                <button id="bt-connect-btn" class="btn-bt">📡 Connect ESP32</button>
+                <button id="emg-on-btn" class="btn-emg-on" disabled>🟢 EMG ON</button>
+                <button id="emg-off-btn" class="btn-emg-off" disabled>🔴 EMG OFF</button>
+              </div>
+              <div class="signal-col">
+                <div class="signal-tag">Signal 2</div>
+                <div class="traffic-light-widget" id="tl2">
+                  <div class="tl-light red" id="tl2-red"></div>
+                  <div class="tl-light yellow" id="tl2-yellow"></div>
+                  <div class="tl-light green" id="tl2-green"></div>
+                </div>
+              </div>
+            </div>
+            <div class="bt-status-text" id="bt-detail-status">Not connected — click Connect ESP32</div>
+          </div>
+        </div>
+
+      </div><!-- /col-right -->
+    </div>
+  </section>
+
+  <!-- ── TAB: HOSPITAL ─────────────────────────────────────────────── -->
+  <section id="tab-content-hospital" class="tab-content" role="tabpanel">
+    <div class="hospital-dashboard">
+
+      <div class="hospital-alert-banner hidden" id="hosp-alert-banner">
+        <div class="alert-pulse"></div>
+        <div class="alert-content">
+          <span class="alert-icon">⚠️</span>
+          <span>INCOMING AMBULANCE — PREPARE EMERGENCY DEPARTMENT</span>
+        </div>
+      </div>
+
+      <div class="hospital-dash-grid">
+        <div class="hdash-card incoming-card">
+          <div class="hdash-card-icon">🚑</div>
+          <div class="hdash-card-info">
+            <div class="hdash-card-label">Ambulance Status</div>
+            <div class="hdash-card-value" id="hdash-emg-status">Standby</div>
+          </div>
+        </div>
+        <div class="hdash-card">
+          <div class="hdash-card-icon">⏱</div>
+          <div class="hdash-card-info">
+            <div class="hdash-card-label">Estimated Arrival</div>
+            <div class="hdash-card-value countdown" id="hdash-eta">—</div>
+          </div>
+        </div>
+        <div class="hdash-card">
+          <div class="hdash-card-icon">📍</div>
+          <div class="hdash-card-info">
+            <div class="hdash-card-label">Distance Away</div>
+            <div class="hdash-card-value" id="hdash-dist">—</div>
+          </div>
+        </div>
+        <div class="hdash-card">
+          <div class="hdash-card-icon">👤</div>
+          <div class="hdash-card-info">
+            <div class="hdash-card-label">Patient Condition</div>
+            <div class="hdash-card-value" id="hdash-patient">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOCATION LINKS -->
+      <div class="hloc-card" id="hospital-location-links-card">
+        <div class="hloc-card-header">
+          <span class="hloc-card-title">🏥 Hospital Navigation</span>
+          <div class="hloc-note" id="hloc-note">Links activate once a hospital is selected</div>
+        </div>
+        <div class="hloc-grid">
+          <a id="hospital-location-link" href="#" target="_blank" rel="noopener" class="mlink mlink-loc">
+            <span>📍</span><span>View Hospital on Google Maps</span><span>↗</span>
+          </a>
+          <a id="hospital-directions-link" href="#" target="_blank" rel="noopener" class="mlink mlink-dir">
+            <span>🚗</span><span>Get Directions (Ambulance → Hospital)</span><span>↗</span>
+          </a>
+          <a id="hospital-streetview-link" href="#" target="_blank" rel="noopener" class="mlink mlink-street">
+            <span>🏙️</span><span>Street View of Hospital</span><span>↗</span>
+          </a>
+          <a id="ambulance-share-link" href="#" target="_blank" rel="noopener" class="mlink mlink-share">
+            <span>📤</span><span>Share Ambulance Location</span><span>↗</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- SMS CARD -->
+      <div class="sms-card" id="sms-preview-card">
+        <div class="sms-card-header">
+          <span>📱 Hospital SMS Preview</span>
+        </div>
+        <div class="sms-card-body" id="sms-preview-body">No message prepared yet.</div>
+        <button id="send-sms-btn" class="btn-sms-send" disabled>📤 Send SMS to Hospital</button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── TAB: NEARBY ───────────────────────────────────────────────── -->
+  <section id="tab-content-nearby" class="tab-content" role="tabpanel">
+    <div class="nearby-dashboard">
+      <div class="nearby-alert hidden" id="nearby-alert">
+        <div class="nearby-siren-wrap">
+          <div class="nearby-siren">🚨</div>
+          <div class="nearby-siren-ring r1"></div>
+          <div class="nearby-siren-ring r2"></div>
+        </div>
+        <h1 class="nearby-title">AMBULANCE APPROACHING</h1>
+        <p class="nearby-subtitle">Please move to the side and give way immediately</p>
+        <div class="nearby-distance" id="nearby-dist-display">—</div>
+        <div class="nearby-instructions">
+          <div class="instruction">⬅️ Pull over to the left</div>
+          <div class="instruction">🛑 Stop if needed</div>
+          <div class="instruction">✅ Let ambulance pass</div>
+        </div>
+      </div>
+      <div class="nearby-standby" id="nearby-standby">
+        <div class="standby-icon-wrap">
+          <div class="standby-icon">📡</div>
+          <div class="standby-ping r1"></div>
+          <div class="standby-ping r2"></div>
+        </div>
+        <div class="standby-title">All Clear</div>
+        <div class="standby-sub">No emergency detected in your area</div>
+        <div class="standby-note">You'll be notified immediately when an ambulance is nearby</div>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /app -->
+
+<!-- EMERGENCY FLASH -->
+<div id="emg-flash" class="emg-flash hidden"></div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- SCRIPTS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="app.js"></script>
+</body>
+</html>
